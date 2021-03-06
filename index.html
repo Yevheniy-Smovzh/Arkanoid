@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Arkanoid</title>
+    <style>
+        /* styles for the whole page */
+        
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
+        /* separate options for the background */
+        
+        body {
+            background: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- draw the playing field -->
+    <canvas width="400" height="500" id="game"></canvas>
+    <!-- the script itself with the game -->
+    <script>
+        // variable for working with the canvas on which the game will be drawn
+        const canvas = document.getElementById('game');
+        const context = canvas.getContext('2d');
+
+        // each row consists of 14 bricks. There will be 6 empty rows on the level, and then 8 rows with bricks
+        // brick colors: red, orange, green and yellow
+        // the letter in the array means the color of the brick
+        const level1 = [
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R'],
+            ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R'],
+            ['O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O'],
+            ['O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O'],
+            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
+            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
+            ['Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'],
+            ['Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y']
+        ];
+
+        // match letters (R, O, G, Y) with colors
+        const colorMap = {
+            'R': 'red',
+            'O': 'orange',
+            'G': 'green',
+            'Y': 'yellow'
+        };
+
+        // make a gap of 2 pixels between the bricks to separate them from each other
+        const brickGap = 2;
+        // dimensions of each brick
+        const brickWidth = 25;
+        const brickHeight = 12;
+
+        // the width of the wall should take up the remaining space on the canvas on each side
+        // we have 14 bricks of 25 pixels and 13 gaps of 2 pixels, and the total canvas width is 400 pixels
+        // we get the total width of the walls: 400 - (14 * 25 + 2 * 13) = 24px. 
+        // halve to get the width of each wall, which is 12px
+        const wallSize = 12;
+        // main array for the game
+        const bricks = [];
+
+        // the number of points scored in one attempt
+        score = 0;
+
+        // how many points you need to score before the next increase in the platform
+        score_paddle = 5;
+
+        // how many points do you need to score before getting an extra life
+        score_lives = 25;
+
+        // the number of lives at the start
+        lives = 3;
+
+        // create a level like this: process the entire array level1
+        // and those places that are marked with any color will be placed in the game array.
+        // in the same place we will store the coordinates of the beginning of each brick and its color
+
+        // in this function we will put everything related to touching the bricks
+        function touchdown(t_brick) {
+
+            // we award points depending on the color of the brick
+            switch (t_brick.color) {
+                case "yellow":
+                    score += 1;
+                    break;
+                case "green":
+                    score += 2;
+                    break;
+                case "orange":
+                    score += 3;
+                    break;
+                case "red":
+                    score += 4;
+            }
+
+            // for every 25 points - increase the platform size by 2 pixels
+            if (score > score_paddle) {
+                paddle.width += 20;
+                // next increase - after 25 points
+                score_paddle += 25;
+            }
+
+            // and for every 100 points in one attempt, we add one more life
+            if (score > score_lives) {
+                lives += 1;
+                // and complicating the game - increasing the speed of the ball
+                ball.speed += 1;
+                // сразу меняем скорость движения по осям
+                if (ball.dx > 0) {
+                    ball.dx = ball.speed
+                } else {
+                    ball.dx = -1 * ball.speed
+                };
+                if (ball.dy > 0) {
+                    ball.dy = ball.speed
+                } else {
+                    ball.dy = -1 * ball.speed
+                };
+                // the next increase in life - after 100 points
+                score_lives += 100;
+            }
+
+        }
+
+        // пока у нас есть необработанные элементы в массиве с уровнем — обрабатываем их
+        for (let row = 0; row < level1.length; row++) {
+            for (let col = 0; col < level1[row].length; col++) {
+
+                // find the color of the brick
+                const colorCode = level1[row][col];
+
+                // create a new element of the game array - with the coordinates of the brick, color, width and height of the brick
+                bricks.push({
+                    x: wallSize + (brickWidth + brickGap) * col,
+                    y: wallSize + (brickHeight + brickGap) * row,
+                    color: colorMap[colorCode],
+                    width: brickWidth,
+                    height: brickHeight
+                });
+            }
+        }
+
+        // player controlled platform
+        const paddle = {
+            // we put it at the bottom in the center of the field
+            x: canvas.width / 2 - brickWidth / 2,
+            y: 440,
+            // making it the size of a brick
+            width: brickWidth,
+            height: brickHeight,
+
+            // while the platform is not moving anywhere, so the direction of movement is zero
+            dx: 0
+        };
+
+        // a ball that bounces off the platform and destroys bricks
+        const ball = {
+            // starting coordinates
+            x: 130,
+            y: 260,
+            // height and width (for simplicity, this will be a square ball)
+            width: 5,
+            height: 5,
+
+            // ball velocity in both coordinates
+            speed: 2,
+
+            // at the start, the ball does not move anywhere yet
+            dx: 0,
+            dy: 0
+        };
+
+        // check for intersection of objects
+        // took from here: https://developer.mozilla.org/en-US/docs/Games/Techniques/2D_collision_detection
+        function collides(obj1, obj2) {
+            return obj1.x < obj2.x + obj2.width &&
+                obj1.x + obj1.width > obj2.x &&
+                obj1.y < obj2.y + obj2.height &&
+                obj1.y + obj1.height > obj2.y;
+        }
+
+        // main game loop
+        function loop() {
+            // on each frame - clear the field and draw everything anew
+            requestAnimationFrame(loop);
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            // move the platform at the required speed
+            paddle.x += paddle.dx;
+
+            // at the same time, we make sure that she does not leave the walls
+            if (paddle.x < wallSize) {
+                paddle.x = wallSize
+            } else if (paddle.x + paddle.width > canvas.width - wallSize) {
+                paddle.x = canvas.width - wallSize - paddle.width;
+            }
+
+            // the ball also moves at its own speed
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            // and it also needs to be constantly checked so that it does not fly beyond the boundaries of the walls
+            // look at the left and right walls
+            if (ball.x < wallSize) {
+                ball.x = wallSize;
+                ball.dx *= -1;
+            } else if (ball.x + ball.width > canvas.width - wallSize) {
+                ball.x = canvas.width - wallSize - ball.width;
+                ball.dx *= -1;
+            }
+            // check the upper bound
+            if (ball.y < wallSize) {
+                ball.y = wallSize;
+                ball.dy *= -1;
+            }
+
+            //  reload the ball, if it flew down, over the edge of the playing field
+            if (ball.y > canvas.height) {
+
+                // we reduce the number of lives
+                lives -= 1;
+
+                // reset the accumulated points
+                score = 0;
+                score_paddle = 25;
+                score_lives = 100;
+
+                // return the previous platform size
+                paddle.width = brickWidth;
+
+
+                if (lives <= 0) {
+                    // draw a black rectangle in the middle of the field
+                    context.fillStyle = 'black';
+                    context.globalAlpha = 0.75;
+                    context.fillRect(0, canvas.height / 2 - 30, canvas.width, 60);
+                    // write the inscription in white monospaced font in the center
+                    context.globalAlpha = 1;
+                    context.fillStyle = 'white';
+                    context.font = '36px monospace';
+                    context.textAlign = 'center';
+                    context.textBaseline = 'middle';
+                    context.fillText('GAME OVER!', canvas.width / 2, canvas.height / 2);
+
+                    // stop the game
+                    return;
+                };
+
+                ball.x = 130;
+                ball.y = 260;
+                ball.dx = 0;
+                ball.dy = 0;
+            }
+
+            // check if the ball touched the platform controlled by the player. If touched - change the direction of movement along the Y axis to the opposite
+            if (collides(ball, paddle)) {
+                ball.dy *= -1;
+
+                // move the ball above the platform so that on the next frame it will not be counted as a collision again
+                ball.y = paddle.y - ball.height;
+            }
+
+            // check if the ball touched the colored brick
+            // if touched, we change the direction of the ball's movement depending on the wall of contact
+            // to do this, in a loop, we check each brick for touch
+            for (let i = 0; i < bricks.length; i++) {
+                // take another brick
+                const brick = bricks[i];
+
+                // if there was a touch
+                if (collides(ball, brick)) {
+
+                    touchdown(brick);
+
+                    // we remove the brick from the array
+                    bricks.splice(i, 1);
+
+                    // if the ball touches the brick from above or below, we change the direction of the ball's movement along the Y axis
+                    if (ball.y + ball.height - ball.speed <= brick.y ||
+                        ball.y >= brick.y + brick.height - ball.speed) {
+                        ball.dy *= -1;
+                    }
+                    // otherwise, change the direction of the ball along the X axis
+                    else {
+                        ball.dx *= -1;
+                    }
+                    // how we found a touch - immediately exit the check cycle
+                    break;
+                }
+            }
+
+            // draw walls
+            context.fillStyle = 'lightgrey';
+            context.fillRect(0, 0, canvas.width, wallSize);
+            context.fillRect(0, 0, wallSize, canvas.height);
+            context.fillRect(canvas.width - wallSize, 0, wallSize, canvas.height);
+
+            // if the ball is in motion, draw it
+            if (ball.dx || ball.dy) {
+                context.fillRect(ball.x, ball.y, ball.width, ball.height);
+            }
+
+            // draw bricks
+            bricks.forEach(function(brick) {
+                context.fillStyle = brick.color;
+                context.fillRect(brick.x, brick.y, brick.width, brick.height);
+            });
+
+            // draw a platform
+            context.fillStyle = 'cyan';
+            context.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+
+            // Text color - gray  
+            context.fillStyle = "#777777";
+            // Setting the size and font  
+            context.font = "20pt monospace";
+            // First, we display the record
+            context.fillText('Score: ' + score, 50, 490);
+            // Then - the points scored  
+            context.fillText('Life:' + lives, 250, 490);
+        }
+
+        // track the player's keystrokes
+        document.addEventListener('keydown', function(e) {
+            // left arrow
+            if (e.which === 37) {
+                paddle.dx = -3;
+            }
+            // right arrow
+            else if (e.which === 39) {
+                paddle.dx = 3;
+            }
+
+            // handle pressing the spacebar
+            // if the ball is not launched, we launch it from the starting point, from top to bottom
+            if (ball.dx === 0 && ball.dy === 0 && e.which === 32) {
+                ball.dx = ball.speed;
+                ball.dy = ball.speed;
+            }
+        });
+
+        // as soon as the player stopped pressing the arrow keys - stop the platform
+        document.addEventListener('keyup', function(e) {
+            if (e.which === 37 || e.which === 39) {
+                paddle.dx = 0;
+            }
+        });
+
+        // start the game
+        requestAnimationFrame(loop);
+    </script>
+</body>
+
+</html>
